@@ -897,3 +897,7 @@ export default function PaymentAnalyzerV6() {
           </CardContent>
         </Card>
       )}
+          </div>
+  );
+}
+
