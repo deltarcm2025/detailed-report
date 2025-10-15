@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
-import { ClipboardPaste, RefreshCw, Download, Search, Undo2 } from "lucide-react";
+import { ClipboardPaste, RefreshCw, Download, Search, Undo2, Check } from "lucide-react";
 import Papa from "papaparse";
 import * as d3 from "d3";
 
@@ -314,6 +314,20 @@ export default function PaymentAnalyzerV6() {
     });
   };
   const resetOverridesAll = () => setOverrides({});
+
+  // Quick-apply: accept current Paid as the proxy for the group (ignores Units)
+  const acceptPaidAsProxyForGroup = (g, paidAmount) => {
+    if (paidAmount == null) return;
+    const key = buildKeyNoUnits({
+      Insurance: normalizeInsurance(g.Insurance),
+      CPT: String(g.CPT || "").trim(),
+      POS: String(g.POS || "").trim(),
+      Modifiers: normalizeModifiers(g.Modifiers),
+    });
+    const amt = +Number(paidAmount).toFixed(2);
+    if (!Number.isFinite(amt)) return;
+    setOverrides((m) => ({ ...m, [key]: amt }));
+  };
 
   function buildHover(stat) {
     const top = (stat.topValues || []).slice(0, 5).map(([v, c]) => `${fmt(v)}×${c}`).join(", ");
@@ -746,9 +760,36 @@ export default function PaymentAnalyzerV6() {
                       <td className="p-2 whitespace-nowrap">{r.Modifiers}</td>
                       <td className="p-2 text-right">{r.Charges}</td>
                       <td className="p-2 text-right">{r.Metric}</td>
-                      <td className="p-2 text-right" title={r.ProxyHover}>{r.Proxy}</td>
+                      <td className="p-2 text-right" title={r.ProxyHover}>
+                        <div className="flex items-center justify-end gap-1">
+                          <span>{r.Proxy}</span>
+                          {/* Icon to set proxy = this line's Paid/Allowed value */}
+                          <button
+                            type="button"
+                            className="p-1 rounded hover:bg-gray-100"
+                            title={`Set proxy = ${benchmark === 'paid' ? 'Paid' : 'Allowed'}`}
+                            onClick={() => acceptPaidAsProxyForGroup({ Insurance: r.Insurance, CPT: r.CPT, POS: r.POS, Modifiers: r.Modifiers }, parseFloat(r.Metric))}
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
                       <td className="p-2 text-right">{r.DeviationPct}</td>
-                      <td className="p-2 whitespace-nowrap font-medium">{r.Status}</td>
+                      <td className="p-2 whitespace-nowrap font-medium">
+                        <div className="flex items-center gap-2">
+                          <span>{r.Status}</span>
+                          {/^Overpaid|Overpayment/.test(r.Status) && (
+                            <button
+                              type="button"
+                              className="p-1 rounded hover:bg-green-50 border border-green-200"
+                              title="Accept Paid as Proxy for this payer/CPT/POS/mods"
+                              onClick={() => acceptPaidAsProxyForGroup({ Insurance: r.Insurance, CPT: r.CPT, POS: r.POS, Modifiers: r.Modifiers }, parseFloat(r.Metric))}
+                            >
+                              <Check className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                       <td className="p-2 min-w-[280px]">{r.Explanation}</td>
                     </tr>
                   ))}
@@ -872,32 +913,4 @@ export default function PaymentAnalyzerV6() {
                     <th className="text-left p-2">CPT</th>
                     <th className="text-left p-2">POS</th>
                     <th className="text-left p-2">Mods</th>
-                    <th className="text-right p-2">Charges</th>
-                    <th className="text-right p-2">Ins. Paid</th>
-                    <th className="text-right p-2">Adjustment</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {denials.map((r, i) => (
-                    <tr key={i} className="border-b">
-                      <td className="p-2 whitespace-nowrap">{r.Patient}</td>
-                      <td className="p-2 whitespace-nowrap">{r.DOS}</td>
-                      <td className="p-2 whitespace-nowrap">{r.Insurance}</td>
-                      <td className="p-2 whitespace-nowrap">{r.CPT}</td>
-                      <td className="p-2 whitespace-nowrap">{r.POS}</td>
-                      <td className="p-2 whitespace-nowrap">{r.Modifiers}</td>
-                      <td className="p-2 text-right">{r.Charges}</td>
-                      <td className="p-2 text-right">{r.InsurancePaid}</td>
-                      <td className="p-2 text-right">{r.Adjustment}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-          </div>
-  );
-}
-
+                    <th className="te
