@@ -56,7 +56,31 @@
             };
             return <button className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className || ''}`} {...props}>{children}</button>;
         };
-        const Input = ({ className, ...props }) => <input className={`flex h-10 w-full rounded-md border border-gray-300 bg-transparent py-2 px-3 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black ${className || ''}`} {...props} />;
+        
+        // --- UPDATED Input Component ---
+        const Input = ({ className, type, ...props }) => {
+            if (type === 'file') {
+                // Special styling for file input to make the button visible and clickable
+                return <input 
+                    type="file" 
+                    className={`block w-full text-sm text-gray-500
+                                file:mr-4 file:py-2 file:px-4
+                                file:rounded-md file:border-0
+                                file:text-sm file:font-semibold
+                                file:bg-black file:text-white
+                                hover:file:bg-black/90
+                                ${className || ''}`}
+                    {...props} 
+                />;
+            }
+            
+            // Default styling for text, etc.
+            return <input 
+                type={type} 
+                className={`flex h-10 w-full rounded-md border border-gray-300 bg-transparent py-2 px-3 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black ${className || ''}`} 
+                {...props} 
+            />;
+        };
         const Textarea = ({ className, ...props }) => <textarea className={`flex w-full rounded-md border border-gray-300 bg-transparent py-2 px-3 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black ${className || ''}`} {...props} />;
         const Slider = ({ value, onValueChange, ...props }) => <input type="range" value={value} onChange={e => onValueChange([Number(e.target.value)])} {...props} />;
         
@@ -418,4 +442,5 @@
     </script>
 </body>
 </html>
+
 
