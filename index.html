@@ -141,6 +141,7 @@
             const [decontaminateChargesProxy, setDecontaminateChargesProxy] = useState(true);
             const [examples, setExamples] = useState("");
             const [benchmark, setBenchmark] = useState("paid");
+            const [fileInputKey, setFileInputKey] = useState(Date.now());
 
             const onUpload = (e) => {
                 const f = e.target.files?.[0];
@@ -338,7 +339,15 @@
                 });
             }, [examples, groupsMap, benchmark]);
 
-            const reset = () => { setFileName(""); setRows([]); setPasteText(""); setExamples(""); setFilter({ payer: "", cpt: "", pos: "", mods: "" }); setBenchmark("paid"); };
+            const reset = () => { 
+                setFileName(""); 
+                setRows([]); 
+                setPasteText(""); 
+                setExamples(""); 
+                setFilter({ payer: "", cpt: "", pos: "", mods: "" }); 
+                setBenchmark("paid"); 
+                setFileInputKey(Date.now());
+            };
             const downloadCSV = () => {
                 const csv = Papa.unparse(issues);
                 const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -358,7 +367,7 @@
                             <p className="text-sm text-gray-600">Upload a <b>CSV</b> or <b>TSV</b>, or paste the table text below. v5 benchmarks on <b>Insurance Paid</b> by default and fixes earlier proxy errors.</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="flex items-center space-x-2">
-                                    <Input type="file" accept=".csv,.tsv,.txt" onChange={onUpload} />
+                                    <Input key={fileInputKey} type="file" accept=".csv,.tsv,.txt" onChange={onUpload} />
                                     <Button variant="secondary" onClick={reset}><RefreshCw className="mr-2 h-4 w-4" /> Reset</Button>
                                 </div>
                                 <div className="flex items-center space-x-3">
@@ -409,5 +418,4 @@
     </script>
 </body>
 </html>
-
 
