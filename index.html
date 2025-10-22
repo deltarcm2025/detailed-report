@@ -1,486 +1,434 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Insurance Payment Analyzer</title>
-    <!-- Tailwind CSS for styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Provider CPT Claims Report</title>
+  <style>
+    :root { --blue:#2563eb; --slate:#1e3a8a; --bg:#f9fafb; --line:#e5e7eb; --text:#111827; --green:#059669; --green-bg:#d1fae5; --red:#b91c1c; --red-bg:#fee2e2; }
+    body { font-family: Arial, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+    h1, h2, h3 { color: var(--slate); }
+    textarea, input, button, select { font-family: inherit; }
+    textarea { width: 100%; height: 150px; border: 1px solid #ccc; border-radius: 8px; padding: 10px; margin-bottom: 12px; background:white; }
+    input, select { padding: 8px 10px; border-radius: 8px; border: 1px solid #ccc; background:white; }
+    button { background: var(--blue); color: white; border: none; padding: 9px 14px; border-radius: 8px; cursor: pointer; margin-right: 6px; }
+    button.secondary { background: white; color: var(--blue); border: 1px solid var(--blue); }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .card { background: white; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; border:1px solid #eef2f7; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; font-size: 13px; background:white; }
+    th { background-color: #f3f4f6; font-weight: 600; }
+    tr:nth-child(even) td { background-color: #fbfdff; }
+    .note { color:#374151; font-size:13px; }
+    .pill { display:inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .2px; }
+    .pill-paid { background: var(--green-bg); color: var(--green); border: 1px solid #a7f3d0; }
+    .pill-unpaid { background: var(--red-bg); color: var(--red); border: 1px solid #fecaca; }
+    .section-title { display:flex; align-items:center; justify-content:space-between; }
+    .muted { color:#6b7280; font-size:12px; }
+    .controls { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center; }
+    .provider-list { display:flex; flex-wrap:wrap; gap:8px; max-height:120px; overflow:auto; padding:6px; border:1px dashed var(--line); border-radius:8px; background:#fff; }
+    .provider-list label { display:flex; align-items:center; gap:6px; padding:4px 8px; border:1px solid var(--line); border-radius:999px; background:#f8fafc; font-size:12px; }
+    @media print { button, textarea, input, select, .note { display:none; } .card { box-shadow:none; border:1px solid var(--line); break-inside: avoid; } }
+  </style>
 </head>
-<body class="bg-gray-50">
-    <!-- The React app will be rendered here -->
-    <div id="root"></div>
+<body>
+  <h1>Provider CPT Claims Report</h1>
+  <p class="note">Upload or paste CSV/TSV. The report auto-extracts the provider (if present) and shows an A/Q/L summary with claim-level detail. Supports comparing up to 5 providers and multi-file upload.</p>
+  <div class="row" style="margin-bottom:8px;">
+    <label>Provider Name: <input type="text" id="providerName" placeholder="Used if Provider column missing" /></label>
+    <input type="file" accept=".csv,.tsv" multiple onchange="readFiles(this)">
+  </div>
+  <textarea id="data" placeholder="Paste data here..."></textarea>
+  <div>
+    <button onclick="analyze()">Generate Report</button>
+    <button class="secondary" onclick="document.getElementById('data').value='';document.getElementById('output').innerHTML='';document.getElementById('providerName').value='';">Clear</button>
+  </div>
 
-    <!-- Core libraries to run the React app in the browser -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    
-    <!-- Babel to transpile JSX code -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <div id="output"></div>
 
-    <!-- External libraries used in the app -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/papaparse/5.3.2/papaparse.min.js"></script>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-
-    <!-- The React/JSX code -->
-    <script type="text/babel">
-        const { useState, useMemo, useEffect } = React;
-
-        /**
-         * Insurance Payment Analyzer (v5)
-         * This is a self-contained HTML file running a React application.
-         */
-
-        // --- Mock UI Components & Icons ---
-        const Card = ({ children }) => <div className="bg-white border border-gray-200 rounded-xl shadow-sm">{children}</div>;
-        const CardContent = ({ className, children }) => <div className={`p-4 md:p-6 ${className || ''}`}>{children}</div>;
-        const Button = ({ variant = 'primary', size = 'md', className, children, ...props }) => {
-            const baseClasses = "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background";
-            const variantClasses = {
-                primary: "bg-black text-white hover:bg-black/90",
-                secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200",
-                outline: "border border-gray-200 hover:bg-gray-100 hover:text-gray-900",
-            };
-            const sizeClasses = {
-                sm: "h-9 px-3",
-                md: "h-10 py-2 px-4",
-            };
-            return <button className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className || ''}`} {...props}>{children}</button>;
-        };
-        
-        // --- SIMPLIFIED Input Component ---
-        // Removed the special 'file' type logic which was causing conflicts.
-        // This component is now only for text-based inputs.
-        const Input = ({ className, type, ...props }) => {
-            return <input 
-                type={type} 
-                className={`flex h-10 w-full rounded-md border border-gray-300 bg-transparent py-2 px-3 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black ${className || ''}`} 
-                {...props} 
-            />;
-        };
-        const Textarea = ({ className, ...props }) => <textarea className={`flex w-full rounded-md border border-gray-300 bg-transparent py-2 px-3 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black ${className || ''}`} {...props} />;
-        const Slider = ({ value, onValueChange, ...props }) => <input type="range" value={value} onChange={e => onValueChange([Number(e.target.value)])} {...props} />;
-        
-        // --- Lucide Icons as SVG Components ---
-        const Icon = ({ className, children }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>;
-        const ClipboardPaste = ({ className }) => <Icon className={className}><path d="M12 2H9.5a2.5 2.5 0 0 0-2.475 2.036.5.5 0 0 1-.95.032A2.5 2.5 0 0 0 3.5 2H2v4h1.5a2.5 2.5 0 0 0 2.475-2.036.5.5 0 0 1 .95-.032A2.5 2.5 0 0 0 9.5 4H12v2h2.5a2.5 2.5 0 0 1 2.475 2.036.5.5 0 0 0 .95.032A2.5 2.5 0 0 1 20.5 6H22V2h-1.5a2.5 2.5 0 0 0-2.475 2.036.5.5 0 0 1-.95.032A2.5 2.5 0 0 0 14.5 2H12Z"/><path d="M16 4h2v4h-2Z"/><path d="M4 4h2v4H4Z"/><path d="M12 2v2"/><rect width="8" height="8" x="8" y="14" rx="1"/><path d="M8 4a2 2 0 0 0-2 2v2h12V6a2 2 0 0 0-2-2Z"/></Icon>;
-        const RefreshCw = ({ className }) => <Icon className={className}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M3 21a9 9 0 0 0 9-9 9.75 9.75 0 0 0-6.74-2.74L3 16"/><path d="M8 16H3v5"/></Icon>;
-        const Download = ({ className }) => <Icon className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></Icon>;
-        const Search = ({ className }) => <Icon className={className}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></Icon>;
-
-        // --- Core Application Logic ---
-        const REQUIRED_COLS = ["Patient_Name", "Insurance", "Date_of_Service", "POS", "CPT", "Modifiers", "Days_or_Units", "Charges", "Insurance_Payment", "Patient_Payment", "Adjustment", "Balance"];
-
-        function normalizeHeader(h) { return (h || "").toString().trim().replace(/\s+/g, "_").replace(/[^A-Za-z0-9_]/g, "").toUpperCase(); }
-        function getVal(row, key) {
-            if (key in row) return row[key];
-            const want = normalizeHeader(key);
-            for (const k of Object.keys(row)) {
-                if (normalizeHeader(k) === want) return row[k];
-            }
-            return undefined;
+  <script>
+    // ---------- File load ----------
+    function readFile(input){
+      const file = input.files && input.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = e => document.getElementById('data').value = e.target.result;
+      reader.readAsText(file);
+    }
+    async function readFiles(input){
+      const files = Array.from(input.files || []);
+      if (!files.length) return;
+      if (files.length > 5){ alert('Please select at most 5 files. Using the first 5.'); files.length = 5; }
+      const texts = await Promise.all(files.map(f=>f.text()));
+      // Use header from first non-empty file; strip duplicate headers from subsequent files
+      let header = '';
+      const bodyLines = [];
+      for (let t of texts){
+        const norm = t.replace(/\r\n?|\n/g, '\n');
+        const lines = norm.split('\n').filter(l=>l.trim().length>0);
+        if (!lines.length) continue;
+        if (!header){ header = lines[0]; bodyLines.push(...lines.slice(1)); }
+        else {
+          const maybeHeader = lines[0].trim();
+          const startIdx = (maybeHeader.toLowerCase() === header.trim().toLowerCase()) ? 1 : 0;
+          bodyLines.push(...lines.slice(startIdx));
         }
-        function toNum(x) {
-            if (x === null || x === undefined || x === "") return 0;
-            const s = String(x).replace(/\$/g, "").trim();
-            const v = Number(s);
-            return Number.isFinite(v) ? v : 0;
+      }
+      if (!header){ alert('No readable rows found in the selected files.'); return; }
+      document.getElementById('data').value = [header, ...bodyLines].join('\n');
+    }
+
+    // ---------- Parsing ----------
+    function detectDelimiter(text){
+      const first = (text.split(/\r?\n/).find(l => l.trim().length) || '');
+      return first.includes('\t') ? '\t' : ',';
+    }
+
+    function parseDelimited(text, delim){
+      const rows = [];
+      let field = '', row = [], inQuotes = false;
+      for (let i = 0; i < text.length; i++){
+        const c = text[i];
+        if (inQuotes){
+          if (c === '"'){
+            const next = text[i+1];
+            if (next === '"'){ field += '"'; i++; }
+            else { inQuotes = false; }
+          } else { field += c; }
+        } else {
+          if (c === '"') inQuotes = true;
+          else if (c === delim) { row.push(field); field = ''; }
+          else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+          else if (c !== '\r') { field += c; }
         }
-        function normalizeModifiers(mod) {
-            if (!mod) return "—";
-            const toks = String(mod).split(/[\,\s]+/).map((t) => t.trim().toUpperCase()).filter(Boolean);
-            const uniq = Array.from(new Set(toks)).sort();
-            return uniq.length ? uniq.join("+") : "—";
-        }
-        function normalizeInsurance(nameRaw) {
-            const name = String(nameRaw || "").trim();
-            const upper = name.toUpperCase();
-            const UHCTokens = ["UNITED HEALTH", "UNITED HEALTH CARE", "UNITED HEALTHCARE", "UHC", "UHC – UNITEDHEALTHCARE", "UHC-UNITEDHEALTHCARE", "UHC – UNITED HEALTHCARE", "UNITED HEALTH CARE INSURANCE"];
-            if (UHCTokens.some((t) => upper.includes(t))) return "United Health Care";
-            return name.replace(/\s+/g, " ").replace(/\s+-\s+/g, " - ").replace(/\s+INC$/i, "").trim();
-        }
-        function computeAllowed(row) {
-            const ins = Math.abs(toNum(getVal(row, "Insurance_Payment")));
-            const pat = Math.max(0, toNum(getVal(row, "Patient_Payment")));
-            const bal = Math.max(0, toNum(getVal(row, "Balance")));
-            return +(ins + pat + bal).toFixed(2);
-        }
-        function percentDelta(v, ref) { if (!ref || ref === 0) return 0; return ((v - ref) / ref) * 100; }
-        function fmt(n) { return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-        function parseText(text) {
-            const parsed = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: false, delimiter: "" });
-            return (parsed.data || []).map((r) => ({ ...r }));
-        }
-        function buildKey(g) { return `${g.Insurance}|${g.CPT}|${g.POS}|${g.Modifiers}|${g.Units}`; }
-        function enrichRows(raw) {
-            return raw.map((r) => ({ ...r }))
-                .filter((r) => String(getVal(r, "CPT") || "").trim() !== "")
-                .map((r, idx) => {
-                    const allowed = computeAllowed(r);
-                    const insurancePaid = Math.abs(toNum(getVal(r, "Insurance_Payment")));
-                    const charges = Math.max(0, toNum(getVal(r, "Charges")));
-                    const adjustment = toNum(getVal(r, "Adjustment"));
-                    const g = {
-                        Insurance: normalizeInsurance(getVal(r, "Insurance")),
-                        CPT: String(getVal(r, "CPT") || "").trim(),
-                        POS: String(getVal(r, "POS") || "").trim(),
-                        Modifiers: normalizeModifiers(getVal(r, "Modifiers")),
-                        Units: String(getVal(r, "Days_or_Units") || getVal(r, "Days_Or_Units") || getVal(r, "Units") || 1).trim(),
-                    };
-                    const patient = String(getVal(r, "Patient_Name") || "").trim();
-                    const dos = String(getVal(r, "Date_of_Service") || "").trim();
-                    return { _row: r, idx, patient, dos, allowed, insurancePaid, charges, adjustment, g, groupKey: buildKey(g) };
-                });
-        }
+      }
+      if (field.length || row.length){ row.push(field); rows.push(row); }
+      return rows.map(r => r.map(x => (x ?? '').trim())).filter(r => r.some(x => x !== ''));
+    }
 
-        function PaymentAnalyzerV5() {
-            const [fileName, setFileName] = useState("");
-            const [rows, setRows] = useState([]);
-            const [threshold, setThreshold] = useState(10);
-            const [pasteText, setPasteText] = useState("");
-            const [filter, setFilter] = useState({ payer: "", cpt: "", pos: "", mods: "" });
-            const [decontaminateChargesProxy, setDecontaminateChargesProxy] = useState(true);
-            const [examples, setExamples] = useState("");
-            const [benchmark, setBenchmark] = useState("paid");
-            const [fileInputKey, setFileInputKey] = useState(Date.now());
-            // --- NEW STATES for loading and user feedback ---
-            const [isLoading, setIsLoading] = useState(false);
-            const [message, setMessage] = useState("");
+    // ---------- Helpers ----------
+    function normalizeMoney(str){
+      if (!str) return 0;
+      let s = String(str).replace(/[$,\s]/g, '').trim();
+      if (s.startsWith('(') && s.endsWith(')')) s = '-' + s.slice(1, -1);
+      const n = parseFloat(s);
+      return isNaN(n) ? 0 : n;
+    }
 
-            const onUpload = (e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                setIsLoading(true);
-                setMessage("Reading file...");
-                setFileName(f.name);
-                const reader = new FileReader();
-                reader.onload = (evt) => {
-                    setMessage("Parsing and analyzing...");
-                    setRows(parseText(String(evt.target?.result || "")));
-                };
-                reader.readAsText(f);
-            };
+    function idxOf(header, candidates){
+      const lower = header.map(h => (h||'').toLowerCase());
+      for (const cand of candidates){
+        const i = lower.indexOf(cand.toLowerCase());
+        if (i !== -1) return i;
+      }
+      return -1;
+    }
 
-            const onPasteAnalyze = () => {
-                if (!pasteText.trim()) return;
-                setIsLoading(true);
-                setMessage("Parsing and analyzing...");
-                setFileName("(pasted)");
-                setRows(parseText(pasteText));
-            };
+    function mostCommon(arr){
+      const c = new Map();
+      for (const v of arr){ if(!v) continue; c.set(v, (c.get(v)||0)+1); }
+      let best = '', bestN = 0; for (const [k,n] of c){ if(n>bestN){best=k;bestN=n;} }
+      return best || '';
+    }
 
-            function buildGroups(enriched) {
-                const byGroup = d3.group(enriched, (d) => d.groupKey);
-                const stats = [];
-                const groupsMap = new Map();
+    function parseDOS(str){
+      if(!str) return null;
+      const s = String(str).trim();
+      const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if(iso) return new Date(+iso[1], +iso[2]-1, +iso[3]);
+      const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+      if(mdy){ let y = +mdy[3]; if(y<100) y+=2000; return new Date(y, +mdy[1]-1, +mdy[2]); }
+      const t = Date.parse(s);
+      return isNaN(t)? null : new Date(t);
+    }
 
-                byGroup.forEach((items, key) => {
-                    const [Insurance, CPT, POS, Modifiers, Units] = key.split("|");
-                    const metricAll = items.map((d) => (benchmark === "paid" ? d.insurancePaid : d.allowed));
-                    let metricForProxy = metricAll.slice();
+    // ---------- Main ----------
+    function analyze(){
+      const text = document.getElementById('data').value.trim();
+      const output = document.getElementById('output');
+      output.innerHTML = '';
+      if (!text){ alert('Please paste data or upload a file.'); return; }
 
-                    if (benchmark === "allowed") {
-                        const equalsChargesFlags = items.map((d) => Math.abs(d.allowed - d.charges) < 0.01);
-                        const hasEqCharges = equalsChargesFlags.some(Boolean);
-                        const hasNotEqCharges = equalsChargesFlags.some((f) => !f);
-                        if (decontaminateChargesProxy && hasEqCharges && hasNotEqCharges) {
-                            metricForProxy = items.filter((d, i) => !equalsChargesFlags[i]).map((d) => d.allowed);
-                        }
-                        if (metricForProxy.length === 0) metricForProxy = metricAll;
-                    }
+      const delim = detectDelimiter(text);
+      const rows = parseDelimited(text, delim);
+      if (rows.length < 2){ output.innerHTML = '<p>No rows detected.</p>'; return; }
 
-                    let proxy = 0, method = "";
-                    const n = metricForProxy.length;
-                    if (n <= 2) {
-                        proxy = d3.max(metricForProxy) ?? 0;
-                        method = "max_when_few";
-                    } else {
-                        const rounded = metricForProxy.map((v) => +(+v).toFixed(2));
-                        const freq = d3.rollup(rounded, (v) => v.length, (v) => v);
-                        const sorted = Array.from(freq.entries()).sort((a, b) => b[1] - a[1]);
-                        if (sorted.length > 1 && sorted[0][1] === sorted[1][1]) {
-                            proxy = d3.median(rounded) ?? 0;
-                            method = "median_fallback";
-                        } else {
-                            proxy = sorted[0][0];
-                            method = "mode";
-                        }
-                    }
+      const header = rows[0];
+      const dataRows = rows.slice(1);
+      const iCPT = idxOf(header, ['cpt']);
+      const iUnits = idxOf(header, ['days_or_units','units','days']);
+      const iCharges = idxOf(header, ['charges','charge']);
+      const iPaid = idxOf(header, ['insurance_payment','paid','payment']);
+      const iPatient = idxOf(header, ['patient_name','patient']);
+      const iPatientID = idxOf(header, ['patient_id','id']);
+      const iDOS = idxOf(header, ['date_of_service','dos','date']);
+      const iProvider = idxOf(header, [
+        'provider','rendering provider','rendering_provider','attending','attending_provider',
+        'billing provider','billing_provider','ordering provider','ordering_provider','physician','provider_name','office provider'
+      ]);
 
-                    const equalsChargesCount = items.filter((d) => Math.abs(d.allowed - d.charges) < 0.01).length;
-                    const stat = { key, Insurance, CPT, POS, Modifiers, Units, n: items.length, proxy, method, median: d3.median(metricAll) ?? 0, mean: d3.mean(metricAll) ?? 0, min: d3.min(metricAll) ?? 0, max: d3.max(metricAll) ?? 0, nEqCharges: equalsChargesCount, usedDecontaminate: benchmark === "allowed" && decontaminateChargesProxy && equalsChargesCount > 0 };
-                    stats.push(stat);
-                    groupsMap.set(key, { items, stat });
-                });
+      if (iCPT === -1){ output.innerHTML = '<p>Could not find a CPT column.</p>'; return; }
 
-                stats.sort((a, b) => a.Insurance.localeCompare(b.Insurance) || a.CPT.localeCompare(b.CPT));
-                return { stats, groupsMap };
-            }
+      // Extract A/Q/L claims only
+      const claims = [];
+      const providerVals = [];
+      for (const r of dataRows){
+        const cpt = String(r[iCPT] || '').trim();
+        if (!/^[AQL]/i.test(cpt)) continue;
+        const units = parseFloat(r[iUnits]) || 0;
+        const charge = normalizeMoney(r[iCharges]);
+        const paid = Math.abs(normalizeMoney(r[iPaid]));
+        const patient = r[iPatient] || '';
+        const patient_id = r[iPatientID] || '';
+        const providerCellRaw = (iProvider!==-1 ? (r[iProvider]||'') : '').trim();
+        const provider = providerCellRaw || (document.getElementById('providerName').value.trim() || 'Unknown Provider');
+        if (provider) providerVals.push(provider);
+        const isPaid = paid > 0;
+        const dos = iDOS!==-1 ? (r[iDOS]||'') : '';
+        const d = parseDOS(dos);
+        const dateSort = d? d.getTime() : Infinity;
+        const codeType = /^[AQL]/i.test(cpt) ? cpt[0].toUpperCase() : '';
+        const claimNo = claims.length + 1;
+        claims.push({ claimNo, provider, cpt, codeType, units, charge, paid, patient, patient_id, isPaid, dos, dateSort });
+      }
 
-            // Renamed the memoized result
-            const analysisResults = useMemo(() => {
-                if (!rows.length) {
-                    return { issues: [], groupedStats: [], totals: null, denials: [], unpaidPatients: [], proxyAudits: [], groupsMap: new Map(), alqReport: [], _enrichedCount: 0 };
-                }
+      if (!claims.length){ output.innerHTML = '<p>No A/Q/L codes found.</p>'; return; }
 
-                const enriched = enrichRows(rows);
-                const { stats, groupsMap } = buildGroups(enriched);
+      // Provider set & default selection (top 5 by units)
+      const providers = Array.from(new Set(claims.map(c=>c.provider))).sort((a,b)=>a.localeCompare(b));
+      const byProvUnits = new Map();
+      claims.forEach(c=> byProvUnits.set(c.provider, (byProvUnits.get(c.provider)||0)+c.units));
+      const top5 = providers.slice().sort((a,b)=> (byProvUnits.get(b)||0) - (byProvUnits.get(a)||0)).slice(0,5);
+      const selectedProviders = new Set(top5);
 
-                const outIssues = [];
-                const proxyAud = [];
-                let totalInsurancePaid = 0, totalMetricActual = 0, totalMetricExpected = 0;
+      // ===== Report header =====
+      const reportHeader = document.createElement('div');
+      reportHeader.className = 'card';
+      const pLabel = providers.length>1 ? `${providers.length} providers` : providers[0] || (document.getElementById('providerName').value.trim()||'Unknown Provider');
+      reportHeader.innerHTML = `<div class="section-title"><h2>Report for ${pLabel}</h2><span class="muted">Generated: ${new Date().toLocaleString()}</span></div>
+      <div class="muted">A/Q/L codes only</div>`;
+      output.appendChild(reportHeader);
 
-                stats.forEach((stat) => {
-                    const pack = groupsMap.get(stat.key);
-                    const items = pack.items;
-                    items.forEach((d) => {
-                        const metric = benchmark === "paid" ? d.insurancePaid : d.allowed;
-                        totalInsurancePaid += d.insurancePaid;
-                        totalMetricActual += metric;
-                        totalMetricExpected += stat.proxy;
+      // ===== Provider Comparison =====
+      const provCard = document.createElement('div');
+      provCard.className = 'card';
+      provCard.innerHTML = `<div class="section-title"><h3>Provider Comparison (A/Q/L)</h3><span class="muted">Select up to 5 providers</span></div>`;
 
-                        const delta = percentDelta(metric, stat.proxy);
-                        let label = "Within expected range", reason = "";
+      const provControls = document.createElement('div');
+      provControls.className = 'provider-list';
+      providers.forEach(p=>{
+        const lbl = document.createElement('label');
+        const cb = document.createElement('input'); cb.type='checkbox'; cb.value=p; cb.checked = selectedProviders.has(p);
+        cb.addEventListener('change', ()=>{
+          const checked = Array.from(provControls.querySelectorAll('input[type=checkbox]:checked'));
+          if (checked.length>5){ cb.checked=false; alert('Please select at most 5 providers.'); return; }
+          selectedProviders.clear(); checked.forEach(x=> selectedProviders.add(x.value));
+          renderProviderComparison();
+          rebuildAndRenderSummary();
+          renderClaims();
+        });
+        lbl.appendChild(cb);
+        lbl.appendChild(document.createTextNode(p));
+        provControls.appendChild(lbl);
+      });
+      provCard.appendChild(provControls);
 
-                        if (Math.abs(delta) > threshold) {
-                           if (delta < 0) {
-                               label = benchmark === "paid" ? "Underpaid" : "Underpayment";
-                               reason = benchmark === "paid" ? "Paid is below typical. Check modifier, bundling, etc." : "Allowed is below typical.";
-                           } else {
-                               label = benchmark === "paid" ? "Overpaid" : "Overpayment";
-                               reason = benchmark === "paid" ? "Paid is above typical. Check code variant, etc." : "Allowed is above typical.";
-                           }
-                        }
+      const provTable = document.createElement('table');
+      provTable.innerHTML = `<thead><tr>
+        <th>Provider</th>
+        <th>Total Units</th>
+        <th>Units Paid</th>
+        <th>Units Unpaid</th>
+        <th>Paid %</th>
+        <th>L Units</th>
+        <th>Q Units</th>
+        <th>A Units</th>
+      </tr></thead>`;
+      const provBody = document.createElement('tbody');
+      provTable.appendChild(provBody);
+      provCard.appendChild(provTable);
+      output.appendChild(provCard);
 
-                        const usingChargesAsAllowed = Math.abs(d.allowed - d.charges) < 0.01 && d.charges > 0;
-                        if ((label === "Overpaid" || label === "Overpayment") && (usingChargesAsAllowed || items.length <= 2)) {
-                            proxyAud.push({ Patient: d.patient, DOS: d.dos, Insurance: d.g.Insurance, CPT: d.g.CPT, POS: d.g.POS, Modifiers: d.g.Modifiers, Units: d.g.Units, Charges: d.charges, Metric: metric, Proxy: stat.proxy, nInGroup: items.length, Method: stat.method, Note: usingChargesAsAllowed ? "Allowed==Charges; benchmark may be inflated." : "Proxy from ≤2 lines; unstable." });
-                        }
+      function renderProviderComparison(){
+        provBody.innerHTML='';
+        const provs = selectedProviders.size? Array.from(selectedProviders) : providers;
+        provs.sort((a,b)=> (byProvUnits.get(b)||0) - (byProvUnits.get(a)||0));
+        provs.forEach(p=>{
+          const rows = claims.filter(c=>c.provider===p);
+          const totalUnits = rows.reduce((s,x)=>s+x.units,0);
+          const unitsPaid = rows.filter(x=>x.isPaid).reduce((s,x)=>s+x.units,0);
+          const unitsUnpaid = totalUnits - unitsPaid;
+          const paidPct = totalUnits? Math.round((unitsPaid/totalUnits)*100) : 0;
+          const L = rows.filter(r=>r.codeType==='L').reduce((s,x)=>s+x.units,0);
+          const Q = rows.filter(r=>r.codeType==='Q').reduce((s,x)=>s+x.units,0);
+          const A = rows.filter(r=>r.codeType==='A').reduce((s,x)=>s+x.units,0);
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${p}</td><td>${Math.round(totalUnits)}</td><td>${Math.round(unitsPaid)}</td><td>${Math.round(unitsUnpaid)}</td><td>${paidPct}%</td><td>${Math.round(L)}</td><td>${Math.round(Q)}</td><td>${Math.round(A)}</td>`;
+          provBody.appendChild(tr);
+        });
+      }
+      renderProviderComparison();
 
-                        outIssues.push({ Patient: d.patient, DOS: d.dos, Insurance: d.g.Insurance, CPT: d.g.CPT, POS: d.g.POS, Modifiers: d.g.Modifiers, Units: d.g.Units, Charges: d.charges.toFixed(2), Metric: metric.toFixed(2), Proxy: stat.proxy.toFixed(2), DeviationPct: `${delta.toFixed(1)}%`, Status: label, Explanation: reason });
-                    });
-                });
-                
-                const denials = enriched.filter(d => ((benchmark === "paid" ? d.insurancePaid : d.allowed) === 0 && d.charges > 0)).map(d => ({ Patient: d.patient, DOS: d.dos, Insurance: d.g.Insurance, CPT: d.g.CPT, POS: d.g.POS, Modifiers: d.g.Modifiers, Units: d.g.Units, Charges: d.charges.toFixed(2), InsurancePaid: d.insurancePaid.toFixed(2), Adjustment: d.adjustment.toFixed(2) }));
-                const byPatient = d3.group(enriched, d => d.patient);
-                const unpaidPatients = Array.from(byPatient, ([p, items]) => ({ Patient: p, TotalCharges: d3.sum(items, d => d.charges), TotalInsPaid: d3.sum(items, d => d.insurancePaid) })).filter(p => p.TotalInsPaid === 0 && p.TotalCharges > 0).map(p => ({...p, TotalCharges: fmt(p.TotalCharges), TotalInsurancePaid: fmt(p.TotalInsPaid) }));
-                
-                outIssues.sort((a, b) => (a.Status !== "Within expected range" ? -1 : 1) - (b.Status !== "Within expected range" ? -1 : 1) || Math.abs(parseFloat(b.DeviationPct)) - Math.abs(parseFloat(a.DeviationPct)));
-                
-                const alqCodes = enriched.filter(d => {
-                    const cpt = (d.g.CPT || "").toUpperCase();
-                    return cpt.startsWith('A') || cpt.startsWith('L') || cpt.startsWith('Q');
-                });
-                const alqGrouped = d3.group(alqCodes, d => d.g.CPT, d => d.g.Insurance);
-                const alqReportData = [];
-                alqGrouped.forEach((payers, cpt) => {
-                    payers.forEach((items, payer) => {
-                        const paidItems = items.filter(item => item.insurancePaid > 0);
-                        const unpaidItems = items.filter(item => item.insurancePaid === 0 && item.charges > 0);
+      // ===== High‑Level Summary by CPT Code =====
+      const summaryCard = document.createElement('div');
+      summaryCard.className = 'card';
+      summaryCard.innerHTML = `<h3>High‑Level Summary by CPT Code (A/Q/L)</h3>`;
 
-                        const calculateModePricePerUnit = (itemSet, priceField) => {
-                            if (itemSet.length === 0) return 0;
-                            const pricesPerUnit = itemSet.map(i => {
-                                const units = parseInt(i.g.Units, 10) || 1;
-                                const price = i[priceField];
-                                return (price / units);
-                            }).filter(p => !isNaN(p) && isFinite(p));
+      const controls = document.createElement('div');
+      controls.className = 'controls';
+      const codeSelect = document.createElement('select');
+      codeSelect.id = 'codeFilter';
 
-                            if (pricesPerUnit.length === 0) return 0;
-                            if (pricesPerUnit.length <= 2) return d3.max(pricesPerUnit) ?? 0;
+      const paidSelect = document.createElement('select');
+      paidSelect.id = 'paidFilter';
+      paidSelect.innerHTML = `
+        <option value="">All payment states</option>
+        <option value="paid">Paid only</option>
+        <option value="unpaid">Unpaid only</option>`;
+      controls.appendChild(document.createTextNode('Filter:'));
+      controls.appendChild(codeSelect);
+      controls.appendChild(paidSelect);
+      summaryCard.appendChild(controls);
 
-                            const rounded = pricesPerUnit.map(v => +(+v).toFixed(2));
-                            const freq = d3.rollup(rounded, v => v.length, v => v);
-                            const sorted = Array.from(freq.entries()).sort((a, b) => b[1] - a[1]);
+      const summaryTable = document.createElement('table');
+      summaryTable.innerHTML = '<thead><tr>'+
+        '<th style="width:14%">CPT Code</th>'+
+        '<th style="width:14%">Total Units</th>'+
+        '<th style="width:14%">Units Paid</th>'+
+        '<th style="width:14%">Units Unpaid</th>'+
+        '<th style="width:14%">Paid %</th>'+
+        '<th style="width:14%">Encounters</th>'+
+        '<th style="width:16%">Total Paid ($)</th>'+
+        '</tr></thead>';
+      const sbody = document.createElement('tbody');
+      const sfoot = document.createElement('tfoot');
 
-                            if (sorted.length === 0) return 0;
-                            if (sorted.length > 1 && sorted[0][1] === sorted[1][1]) return d3.median(rounded) ?? 0;
-                            return sorted[0][0];
-                        };
+      function rebuildAndRenderSummary(){
+        const filteredClaims = claims.filter(c=> selectedProviders.size? selectedProviders.has(c.provider) : true);
+        const byCode = new Map();
+        filteredClaims.forEach(r=>{ if(!byCode.has(r.cpt)) byCode.set(r.cpt, []); byCode.get(r.cpt).push(r); });
+        const codes = Array.from(byCode.keys()).sort((a,b)=>a.localeCompare(b));
+        codeSelect.innerHTML = `<option value="">All CPT codes (${codes.length})</option>` + codes.map(c=>`<option value="${c}">${c}</option>`).join('');
+        const codeRows = codes.map(code=>{
+          const vals = byCode.get(code);
+          const totalUnits = vals.reduce((s,x)=>s+x.units,0);
+          const unitsPaid = vals.filter(x=>x.isPaid).reduce((s,x)=>s+x.units,0);
+          const unitsUnpaid = totalUnits - unitsPaid;
+          const encounters = new Set(vals.map(x=> x.patient_id || x.patient)).size;
+          const totalPaid = vals.reduce((s,x)=>s+x.paid,0);
+          return { code, totalUnits, unitsPaid, unitsUnpaid, encounters, totalPaid };
+        });
+        sbody.innerHTML='';
+        const selCode = codeSelect.value;
+        const selPaid = paidSelect.value;
+        let T_total=0, T_paid=0, T_amt=0;
+        codeRows.forEach(r=>{
+          if (selCode && r.code !== selCode) return;
+          if (selPaid==='paid' && r.unitsPaid===0) return;
+          if (selPaid==='unpaid' && r.unitsUnpaid===0) return;
+          const paidPct = r.totalUnits ? Math.round((r.unitsPaid/r.totalUnits)*100) : 0;
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${r.code}</td>
+            <td>${Math.round(r.totalUnits)}</td>
+            <td>${Math.round(r.unitsPaid)}</td>
+            <td>${Math.round(r.unitsUnpaid)}</td>
+            <td>${paidPct}%</td>
+            <td>${r.encounters}</td>
+            <td>$${r.totalPaid.toFixed(2)}</td>`;
+          sbody.appendChild(tr);
+          T_total += r.totalUnits; T_paid += r.unitsPaid; T_amt += r.totalPaid;
+        });
+        const T_unpaid = T_total - T_paid; const T_pct = T_total ? Math.round((T_paid/T_total)*100) : 0;
+        sfoot.innerHTML = `<tr><td><strong>Total</strong></td><td><strong>${Math.round(T_total)}</strong></td><td><strong>${Math.round(T_paid)}</strong></td><td><strong>${Math.round(T_unpaid)}</strong></td><td><strong>${T_pct}%</strong></td><td></td><td><strong>$${T_amt.toFixed(2)}</strong></td></tr>`;
+        // Save state (if you later re-enable exports)
+        window.reportState = { provider: (providers.length>1? 'Multiple Providers' : providers[0]||'Unknown Provider'), claims: filteredClaims, codeRows };
+      }
+      rebuildAndRenderSummary();
+      codeSelect.addEventListener('change', rebuildAndRenderSummary);
+      paidSelect.addEventListener('change', rebuildAndRenderSummary);
 
-                        const paidUnits = d3.sum(paidItems, d => parseInt(d.g.Units, 10) || 1);
-                        const paidPricePerUnitMode = calculateModePricePerUnit(paidItems, 'insurancePaid');
-                        const unpaidUnits = d3.sum(unpaidItems, d => parseInt(d.g.Units, 10) || 1);
-                        const unpaidPricePerUnitMode = calculateModePricePerUnit(unpaidItems, 'charges');
+      summaryTable.appendChild(sbody);
+      summaryTable.appendChild(sfoot);
+      summaryCard.appendChild(summaryTable);
+      output.appendChild(summaryCard);
 
-                        if (paidUnits > 0 || unpaidUnits > 0) {
-                             alqReportData.push({ cpt, payer, paidUnits, paidPricePerUnitMode: paidPricePerUnitMode.toFixed(2), unpaidUnits, unpaidPricePerUnitMode: unpaidPricePerUnitMode.toFixed(2) });
-                        }
-                    });
-                });
-                alqReportData.sort((a,b) => a.cpt.localeCompare(b.cpt) || a.payer.localeCompare(b.payer));
+      // ===== All Individual Claims =====
+      const detailsCard = document.createElement('div');
+      detailsCard.className = 'card';
+      detailsCard.innerHTML = `<div class="section-title"><h3>All Individual Claims (A/Q/L)</h3>
+        <div class="controls">
+          <label>Provider: <select id="claimProvFilter"><option value="">All</option></select></label>
+          <label>CPT: <select id="claimCodeFilter"><option value="">All</option></select></label>
+          <label>Status: <select id="claimStatusFilter">
+            <option value="">All</option>
+            <option value="paid">Paid</option>
+            <option value="unpaid">Unpaid</option>
+          </select></label>
+          <label>DOS from: <input type="date" id="claimFrom"></label>
+          <label>to: <input type="date" id="claimTo"></label>
+        </div>
+      </div>`;
 
-                // Return enriched.length so the feedback effect can use it
-                return { issues: outIssues, groupedStats: stats, totals: { totalInsurancePaid, totalActual: totalMetricActual, totalExpected: totalMetricExpected, deltaExpectedMinusActual: totalMetricExpected - totalMetricActual, benchmarkLabel: benchmark === "paid" ? "Paid" : "Allowed" }, denials, unpaidPatients, proxyAudits: proxyAud, groupsMap, alqReport: alqReportData, _enrichedCount: enriched.length };
-            }, [rows, threshold, decontaminateChargesProxy, benchmark]);
-            
-            // Destructure the results for rendering
-            const { issues, groupedStats, totals, denials, unpaidPatients, proxyAudits, groupsMap, alqReport, _enrichedCount } = analysisResults;
+      const tbl = document.createElement('table');
+      tbl.innerHTML = '<thead><tr><th style="width:6%">#</th><th style="width:16%">Provider</th><th style="width:20%">Patient</th><th style="width:10%">Patient ID</th><th style="width:10%">CPT</th><th style="width:8%">Units</th><th style="width:12%">DOS</th><th style="width:12%">Charge ($)</th><th style="width:12%">Paid ($)</th><th style="width:8%">Status</th></tr></thead>';
+      const tb = document.createElement('tbody');
 
-            // --- NEW Effect for user feedback ---
-            // This runs *after* the analysis is complete to update the message
-            useEffect(() => {
-                if (!isLoading) return; // Only update message if we were loading
+      const claimProvFilter = detailsCard.querySelector('#claimProvFilter');
+      const claimCodeFilter = detailsCard.querySelector('#claimCodeFilter');
+      const claimStatusFilter = detailsCard.querySelector('#claimStatusFilter');
+      const claimFrom = detailsCard.querySelector('#claimFrom');
+      const claimTo = detailsCard.querySelector('#claimTo');
 
-                setIsLoading(false); // Analysis is done, stop spinner
-                
-                if (!rows.length) {
-                    setMessage(""); // Reset
-                } else if (_enrichedCount === 0) {
-                    setMessage(`Analysis complete. File had ${rows.length} rows, but 0 contained CPT codes. Please check your file.`);
-                } else if (alqReport.length === 0) {
-                    setMessage(`Analysis complete. Found ${_enrichedCount} valid rows. No A/L/Q codes were found.`);
-                } else {
-                    setMessage(`Analysis complete. Found ${_enrichedCount} valid rows and ${alqReport.length} A/L/Q code groups.`);
-                }
-                
-            }, [isLoading, rows, alqReport, _enrichedCount]); // Depends on loading state and analysis results
+      const provOpts = providers.map(p=>`<option value="${p}">${p}</option>`).join('');
+      claimProvFilter.innerHTML = '<option value="">All</option>' + provOpts;
+      const codeSet = Array.from(new Set(claims.map(c=>c.cpt))).sort((a,b)=>a.localeCompare(b));
+      claimCodeFilter.innerHTML = '<option value="">All</option>' + codeSet.map(c=>`<option value="${c}">${c}</option>`).join('');
 
-            const filteredIssues = useMemo(() => {
-                if (!issues.length) return issues;
-                return issues.filter(r => (!filter.payer || r.Insurance.toLowerCase().includes(filter.payer.toLowerCase())) && (!filter.cpt || r.CPT.toString() === filter.cpt) && (!filter.pos || r.POS.toString() === filter.pos) && (!filter.mods || r.Modifiers.toLowerCase() === normalizeModifiers(filter.mods).toLowerCase()));
-            }, [issues, filter]);
-            
-            const exampleResults = useMemo(() => {
-                if (!examples.trim()) return [];
-                const want = Papa.parse(examples, { header: true, skipEmptyLines: true, delimiter: "" }).data || [];
-                let gm = groupsMap;
-                if ((!gm || gm.size === 0) && examples.toUpperCase().includes("PATIENT_NAME")) {
-                    gm = buildGroups(enrichRows(parseText(examples))).groupsMap;
-                }
-                return want.map(r => {
-                    const g = { Insurance: normalizeInsurance(r.Insurance), CPT: String(r.CPT || "").trim(), POS: String(r.POS || "").trim(), Modifiers: normalizeModifiers(r.Modifiers), Units: String(r.Units || 1).trim() };
-                    const key = buildKey(g);
-                    const pack = gm.get(key);
-                    if (!pack) return { ...g, Found: false, Message: "No matching group in loaded data." };
-                    const { stat, items } = pack;
-                    const metricVals = items.map(d => (benchmark === "paid" ? d.insurancePaid : d.allowed)).map(v => +(+v).toFixed(2));
-                    const freq = d3.rollup(metricVals, v => v.length, v => v);
-                    const top = Array.from(freq.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
-                    return { ...g, Found: true, Proxy: stat.proxy.toFixed(2), Method: stat.method, n: stat.n, nEqCharges: stat.nEqCharges, Range: `${stat.min.toFixed(2)}–${stat.max.toFixed(2)}`, TopValues: top.map(([val, c]) => `${val}×${c}`).join(", "), Message: stat.usedDecontaminate ? "Group decontaminated." : "" };
-                });
-            }, [examples, groupsMap, benchmark]);
+      function renderClaims(){
+        tb.innerHTML='';
+        const selProv = claimProvFilter.value;
+        const selCode = claimCodeFilter.value;
+        const selStatus = claimStatusFilter.value; // '', 'paid', 'unpaid'
+        const fromVal = claimFrom.value ? new Date(claimFrom.value).getTime() : -Infinity;
+        const toVal = claimTo.value ? new Date(claimTo.value).getTime() : Infinity;
+        const base = claims.filter(c=> selectedProviders.size? selectedProviders.has(c.provider): true);
+        base.forEach(r=>{
+          if (selProv && r.provider !== selProv) return;
+          if (selCode && r.cpt !== selCode) return;
+          if (selStatus==='paid' && !r.isPaid) return;
+          if (selStatus==='unpaid' && r.isPaid) return;
+          const t = r.dateSort;
+          if (!(t>=fromVal && t<=toVal)) return;
+          const pill = r.isPaid ? '<span class="pill pill-paid">PAID</span>' : '<span class="pill pill-unpaid">UNPAID</span>';
+          tb.innerHTML += `<tr>
+              <td>${r.claimNo}</td>
+              <td>${r.provider}</td>
+              <td>${r.patient}</td>
+              <td>${r.patient_id}</td>
+              <td>${r.cpt}</td>
+              <td>${Math.round(r.units)}</td>
+              <td>${r.dos||''}</td>
+              <td>$${r.charge.toFixed(2)}</td>
+              <td>$${r.paid.toFixed(2)}</td>
+              <td>${pill}</td>
+            </tr>`;
+        });
+      }
+      renderClaims();
+      claimProvFilter.addEventListener('change', renderClaims);
+      claimCodeFilter.addEventListener('change', renderClaims);
+      claimStatusFilter.addEventListener('change', renderClaims);
+      claimFrom.addEventListener('change', renderClaims);
+      claimTo.addEventListener('change', renderClaims);
 
-            const reset = () => { 
-                setFileName(""); 
-                setRows([]); 
-                setPasteText(""); 
-                setExamples(""); 
-                setFilter({ payer: "", cpt: "", pos: "", mods: "" }); 
-                setBenchmark("paid"); 
-                setFileInputKey(Date.now());
-                setIsLoading(false); // Added
-                setMessage(""); // Added
-            };
-            const downloadCSV = () => {
-                const csv = Papa.unparse(issues);
-                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `payment_issues_${Date.now()}.csv`;
-                a.click();
-                URL.revokeObjectURL(url);
-            };
+      tbl.appendChild(tb);
+      detailsCard.appendChild(tbl);
+      output.appendChild(detailsCard);
 
-            return (
-                <div className="p-4 space-y-4 max-w-7xl mx-auto">
-                    <Card>
-                        <CardContent className="space-y-3">
-                            <h2 className="text-xl font-semibold">Insurance Payment Analyzer (v5)</h2>
-                            <p className="text-sm text-gray-600">Upload a <b>CSV</b> or <b>TSV</b>, or paste the table text below. v5 benchmarks on <b>Insurance Paid</b> by default and fixes earlier proxy errors.</p>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div className="flex items-center space-x-2">
-                                    {/* --- CORRECTED FILE UPLOAD --- */}
-                                    <input 
-                                        id="file-upload"
-                                        key={fileInputKey} 
-                                        type="file" 
-                                        className="hidden"
-                                        accept=".csv,.tsv,.txt" 
-                                        onChange={onUpload}
-                                        disabled={isLoading} 
-                                    />
-                                    <label
-                                        htmlFor="file-upload"
-                                        className={`inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background h-10 py-2 px-4 cursor-pointer ${isLoading ? 'opacity-50 bg-gray-600 text-white' : 'bg-black text-white hover:bg-black/90'}`}
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                                        Upload File
-                                    </label>
-                                    <Button variant="secondary" onClick={reset} disabled={isLoading}><RefreshCw className="mr-2 h-4 w-4" /> Reset</Button>
-                                </div>
-                                <div className="flex items-center space-x-3">
-                                    <Button onClick={onPasteAnalyze} disabled={isLoading}><ClipboardPaste className="mr-2 h-4 w-4" /> Analyze Pasted Text</Button>
-                                    <div className="flex items-center space-x-2 w-full">
-                                        <span className="text-sm text-gray-600">Variance ±{threshold}%</span>
-                                        <Slider value={[threshold]} onValueChange={(v) => setThreshold(v[0] ?? 10)} min={1} max={30} step={1} className="w-40" />
-                                    </div>
-                                </div>
-                            </div>
-                            <Textarea placeholder="Paste your full report here (include the header row)." value={pasteText} onChange={(e) => setPasteText(e.target.value)} className="min-h-[140px]" />
-                            
-                            {/* --- NEW Loading and Message Feedback --- */}
-                            {isLoading && (
-                                <div className="flex items-center p-3 rounded-md bg-blue-50 text-blue-700">
-                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    <span>{message || "Loading..."}</span>
-                                </div>
-                            )}
-                            {!isLoading && message && (
-                                <div className={`flex items-center p-3 rounded-md ${message.includes("Error") || message.includes("0") ? 'bg-yellow-50 text-yellow-800' : 'bg-green-50 text-green-800'}`}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 mr-3 flex-shrink-0"><path d="M20 6 9 17l-5-5"/></svg>
-                                    <span>{message}</span>
-                                </div>
-                            )}
-                            {!isLoading && fileName && !message && <p className="text-xs text-gray-500">Loaded: {fileName}</p>}
-
-                            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-700">
-                                <label className="flex items-center gap-2"><input type="radio" name="benchmark" checked={benchmark === 'paid'} onChange={() => setBenchmark('paid')} /> Benchmark on <b>Insurance Paid</b></label>
-                                <label className="flex items-center gap-2"><input type="radio" name="benchmark" checked={benchmark === 'allowed'} onChange={() => setBenchmark('allowed')} /> Benchmark on Allowed</label>
-                                {benchmark === 'allowed' && <label className="flex items-center gap-2"><input type="checkbox" checked={decontaminateChargesProxy} onChange={(e) => setDecontaminateChargesProxy(e.target.checked)} /> Ignore lines where Allowed==Charges</label>}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card><CardContent className="space-y-2">
-                        <h3 className="text-lg font-semibold">Quick Filter</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
-                            <Input placeholder="Payer" value={filter.payer} onChange={(e) => setFilter({ ...filter, payer: e.target.value })} />
-                            <Input placeholder="CPT" value={filter.cpt} onChange={(e) => setFilter({ ...filter, cpt: e.target.value })} />
-                            <Input placeholder="POS" value={filter.pos} onChange={(e) => setFilter({ ...filter, pos: e.target.value })} />
-                            <Input placeholder="Modifiers" value={filter.mods} onChange={(e) => setFilter({ ...filter, mods: e.target.value })} />
-                        </div>
-                    </CardContent></Card>
-                    
-                    {totals && <Card><CardContent><h3 className="text-lg font-semibold mb-2">Totals</h3><div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">{Object.entries({ "Total Paid by Insurance": totals.totalInsurancePaid, [`Total ${totals.benchmarkLabel} (Actual)`]: totals.totalActual, [`Total ${totals.benchmarkLabel} (Expected)`]: totals.totalExpected, "Delta (Expected − Actual)": totals.deltaExpectedMinusActual }).map(([key, value]) => <div className="p-3 rounded-xl bg-gray-50"><div className="text-gray-500">{key}</div><div className="text-xl font-semibold">${fmt(value)}</div></div>)}</div></CardContent></Card>}
-                    
-                    {!!alqReport.length && <Card><CardContent><h3 className="text-lg font-semibold mb-2">A/L/Q Code Report</h3><div className="overflow-x-auto"><table className="min-w-full text-sm"><thead><tr className="border-b"><th className="p-2 text-left">CPT</th><th className="p-2 text-left">Payer</th><th className="p-2 text-right">Paid Units</th><th className="p-2 text-right">Paid Price/Unit (Mode)</th><th className="p-2 text-right">Unpaid Units</th><th className="p-2 text-right">Unpaid Price/Unit (Mode)</th></tr></thead><tbody>{alqReport.map((r, i) => <tr key={i} className="border-b hover:bg-gray-50"><td className="p-2 whitespace-nowNrap">{r.cpt}</td><td className="p-2 whitespace-nowrap">{r.payer}</td><td className="p-2 text-right">{r.paidUnits}</td><td className="p-2 text-right">${r.paidPricePerUnitMode}</td><td className="p-2 text-right">{r.unpaidUnits}</td><td className="p-2 text-right">${r.unpaidPricePerUnitMode}</td></tr>)}</tbody></table></div></CardContent></Card>}
-
-                    {!!filteredIssues.length && <Card><CardContent><div className="flex justify-between items-center mb-2"><h3 className="text-lg font-semibold">Line-by-line Review</h3><Button size="sm" variant="outline" onClick={downloadCSV}><Download className="h-4 w-4 mr-2" /> Export CSV</Button></div><div className="overflow-x-auto"><table className="min-w-full text-sm"><thead><tr className="border-b">{["Patient", "DOS", "Insurance", "CPT", "POS", "Mods", "Charges", benchmark === 'paid' ? 'Paid' : 'Allowed', "Proxy", "Δ%", "Status", "Explanation"].map(h => <th className={`p-2 text-left ${["Charges", "Paid", "Allowed", "Proxy", "Δ%"].includes(h) ? "text-right" : ""}`}>{h}</th>)}</tr></thead><tbody>{filteredIssues.map((r, i) => <tr key={i} className={`border-b ${r.Status !== "Within expected range" ? "bg-red-50/40" : ""}`}>{Object.values(r).map(val => <td className="p-2 whitespace-nowrap">{val}</td>)}</tr>)}</tbody></table></div></CardContent></Card>}
-                    
-                    {!!groupedStats.length && <Card><CardContent><h3 className="text-lg font-semibold mb-2">Group Benchmarks</h3><div className="overflow-x-auto"><table className="min-w-full text-sm"><thead><tr className="border-b">{["Insurance", "CPT", "POS", "Mods", "Units", "n", "Proxy", "Method", "Median", "Mean", "Min", "Max", "Eq Charges"].map(h => <th className={`p-2 text-left ${["n", "Proxy", "Median", "Mean", "Min", "Max", "Eq Charges"].includes(h) ? "text-right" : ""}`}>{h}</th>)}</tr></thead><tbody>{groupedStats.map((g, i) => <tr key={i} className="border-b hover:bg-gray-50"><td>{g.Insurance}</td><td>{g.CPT}</td><td>{g.POS}</td><td>{g.Modifiers}</td><td>{g.Units}</td><td className="text-right">{g.n}</td><td className="text-right">{g.proxy.toFixed(2)}</td><td>{g.method}</td><td className="text-right">{g.median.toFixed(2)}</td><td className="text-right">{g.mean.toFixed(2)}</td><td className="text-right">{g.min.toFixed(2)}</td><td className="text-right">{g.max.toFixed(2)}</td><td className="text-right">{g.nEqCharges}</td></tr>)}</tbody></table></div></CardContent></Card>}
-
-                </div>
-            );
-        }
-
-        // Render the main React component to the 'root' div in the HTML
-        const container = document.getElementById('root');
-        const root = ReactDOM.createRoot(container);
-        root.render(<PaymentAnalyzerV5 />);
-
-    </script>
+      // Save state (placeholder for potential exports)
+      window.reportState = { provider: (providers.length>1? 'Multiple Providers' : providers[0]||'Unknown Provider'), claims, codeRows: [] };
+    }
+  </script>
 </body>
 </html>
-
