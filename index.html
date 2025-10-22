@@ -36,11 +36,9 @@
         /**
          * Insurance Payment Analyzer (v5)
          * This is a self-contained HTML file running a React application.
-         * The original code was fixed to work without a build step.
          */
 
         // --- Mock UI Components & Icons ---
-        // These components replicate the look of the originals using standard HTML and Tailwind CSS.
         const Card = ({ children }) => <div className="bg-white border border-gray-200 rounded-xl shadow-sm">{children}</div>;
         const CardContent = ({ className, children }) => <div className={`p-4 md:p-6 ${className || ''}`}>{children}</div>;
         const Button = ({ variant = 'primary', size = 'md', className, children, ...props }) => {
@@ -57,24 +55,10 @@
             return <button className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className || ''}`} {...props}>{children}</button>;
         };
         
-        // --- UPDATED Input Component ---
+        // --- SIMPLIFIED Input Component ---
+        // Removed the special 'file' type logic which was causing conflicts.
+        // This component is now only for text-based inputs.
         const Input = ({ className, type, ...props }) => {
-            if (type === 'file') {
-                // Special styling for file input to make the button visible and clickable
-                return <input 
-                    type="file" 
-                    className={`block w-full text-sm text-gray-500
-                                file:mr-4 file:py-2 file:px-4
-                                file:rounded-md file:border-0
-                                file:text-sm file:font-semibold
-                                file:bg-black file:text-white
-                                hover:file:bg-black/90
-                                ${className || ''}`}
-                    {...props} 
-                />;
-            }
-            
-            // Default styling for text, etc.
             return <input 
                 type={type} 
                 className={`flex h-10 w-full rounded-md border border-gray-300 bg-transparent py-2 px-3 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black ${className || ''}`} 
@@ -277,7 +261,6 @@
                 
                 outIssues.sort((a, b) => (a.Status !== "Within expected range" ? -1 : 1) - (b.Status !== "Within expected range" ? -1 : 1) || Math.abs(parseFloat(b.DeviationPct)) - Math.abs(parseFloat(a.DeviationPct)));
                 
-                // --- A/L/Q Report Logic ---
                 const alqCodes = enriched.filter(d => {
                     const cpt = (d.g.CPT || "").toUpperCase();
                     return cpt.startsWith('A') || cpt.startsWith('L') || cpt.startsWith('Q');
@@ -298,42 +281,28 @@
                             }).filter(p => !isNaN(p) && isFinite(p));
 
                             if (pricesPerUnit.length === 0) return 0;
-                            
-                            if (pricesPerUnit.length <= 2) {
-                                return d3.max(pricesPerUnit) ?? 0;
-                            }
+                            if (pricesPerUnit.length <= 2) return d3.max(pricesPerUnit) ?? 0;
 
                             const rounded = pricesPerUnit.map(v => +(+v).toFixed(2));
                             const freq = d3.rollup(rounded, v => v.length, v => v);
                             const sorted = Array.from(freq.entries()).sort((a, b) => b[1] - a[1]);
 
                             if (sorted.length === 0) return 0;
-                            if (sorted.length > 1 && sorted[0][1] === sorted[1][1]) {
-                                return d3.median(rounded) ?? 0;
-                            }
+                            if (sorted.length > 1 && sorted[0][1] === sorted[1][1]) return d3.median(rounded) ?? 0;
                             return sorted[0][0];
                         };
 
                         const paidUnits = d3.sum(paidItems, d => parseInt(d.g.Units, 10) || 1);
                         const paidPricePerUnitMode = calculateModePricePerUnit(paidItems, 'insurancePaid');
-
                         const unpaidUnits = d3.sum(unpaidItems, d => parseInt(d.g.Units, 10) || 1);
                         const unpaidPricePerUnitMode = calculateModePricePerUnit(unpaidItems, 'charges');
 
                         if (paidUnits > 0 || unpaidUnits > 0) {
-                             alqReportData.push({
-                                cpt,
-                                payer,
-                                paidUnits,
-                                paidPricePerUnitMode: paidPricePerUnitMode.toFixed(2),
-                                unpaidUnits,
-                                unpaidPricePerUnitMode: unpaidPricePerUnitMode.toFixed(2),
-                            });
+                             alqReportData.push({ cpt, payer, paidUnits, paidPricePerUnitMode: paidPricePerUnitMode.toFixed(2), unpaidUnits, unpaidPricePerUnitMode: unpaidPricePerUnitMode.toFixed(2) });
                         }
                     });
                 });
                 alqReportData.sort((a,b) => a.cpt.localeCompare(b.cpt) || a.payer.localeCompare(b.payer));
-
 
                 return { issues: outIssues, groupedStats: stats, totals: { totalInsurancePaid, totalActual: totalMetricActual, totalExpected: totalMetricExpected, deltaExpectedMinusActual: totalMetricExpected - totalMetricActual, benchmarkLabel: benchmark === "paid" ? "Paid" : "Allowed" }, denials, unpaidPatients, proxyAudits: proxyAud, groupsMap, alqReport: alqReportData };
             }, [rows, threshold, decontaminateChargesProxy, benchmark]);
@@ -391,7 +360,23 @@
                             <p className="text-sm text-gray-600">Upload a <b>CSV</b> or <b>TSV</b>, or paste the table text below. v5 benchmarks on <b>Insurance Paid</b> by default and fixes earlier proxy errors.</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="flex items-center space-x-2">
-                                    <Input key={fileInputKey} type="file" accept=".csv,.tsv,.txt" onChange={onUpload} />
+                                    {/* --- CORRECTED FILE UPLOAD --- */}
+                                    {/* Using a standard input triggered by a label is the most reliable method. */}
+                                    <input 
+                                        id="file-upload"
+                                        key={fileInputKey} 
+                                        type="file" 
+                                        className="hidden"
+                                        accept=".csv,.tsv,.txt" 
+                                        onChange={onUpload} 
+                                    />
+                                    <label
+                                        htmlFor="file-upload"
+                                        className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background bg-black text-white hover:bg-black/90 h-10 py-2 px-4 cursor-pointer"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                                        Upload File
+                                    </label>
                                     <Button variant="secondary" onClick={reset}><RefreshCw className="mr-2 h-4 w-4" /> Reset</Button>
                                 </div>
                                 <div className="flex items-center space-x-3">
@@ -442,5 +427,4 @@
     </script>
 </body>
 </html>
-
 
